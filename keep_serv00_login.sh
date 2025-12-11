@@ -3,9 +3,9 @@
 purple() { echo -e "\033[35m$1\033[0m"; }
 
 echo ""
-purple "=== SERV00 | CT8 By:Djkyc一键保活（最终加强版 + 自动识别平台 + 合并TG消息）===\n"
+purple "=== SERV00 | CT8 By:Djkyc 一键保活（最终加强版 + 自动识别平台 + 合并TG消息）===\n"
 
-# 账号脱敏
+# 账号脱敏函数
 mask_username() {
     local name="$1"
     local len=${#name}
@@ -19,7 +19,7 @@ mask_username() {
     fi
 }
 
-# 自动识别 SERV00 / CT8 并统一大写
+# 自动识别平台（大写）
 detect_platform() {
     local host="$1"
 
@@ -32,10 +32,11 @@ detect_platform() {
     fi
 }
 
-# Telegram 发送函数
+# Telegram 推送函数
 send_tg() {
     local message="$1"
     [[ -z "$TG_TOKEN" || -z "$CHAT_ID" ]] && return
+
     curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
         -d "chat_id=$CHAT_ID" \
         -d "parse_mode=Markdown" \
@@ -55,7 +56,7 @@ summary_details=""
 success_count=0
 fail_count=0
 
-# SSH 登录测试
+# SSH 登录（带重试）
 try_login() {
     local ip="$1"
     local username="$2"
@@ -72,7 +73,7 @@ try_login() {
         -tt "$username@$ip" "echo ok; sleep 1; exit" >/dev/null 2>&1
 }
 
-# 遍历所有账户
+# 遍历账户
 for account in $accounts; do
     ip=$(echo "$account" | jq -r '.ip')
     username=$(echo "$account" | jq -r '.username')
@@ -80,19 +81,16 @@ for account in $accounts; do
     port=$(echo "$account" | jq -r '.port // 22')
 
     masked_user=$(mask_username "$username")
-    platform=$(detect_platform "$ip")   # SERV00 / CT8
+    platform=$(detect_platform "$ip")
 
-    echo "激活中：[$platform] $masked_user@$ip"
+    echo "激活中：***$platform*** $masked_user@$ip"
 
-    # 第一次登录
     if try_login "$ip" "$username" "$password" "$port"; then
         success_list+="🟢 [**$platform**] $masked_user@$ip"$'\n'
         summary_details+="🟢 **$platform 激活成功**：\`$masked_user@$ip\`"$'\n'
         ((success_count++))
     else
         sleep 2
-
-        # 第二次重试
         if try_login "$ip" "$username" "$password" "$port"; then
             success_list+="🟢 [**$platform**] $masked_user@$ip"$'\n'
             summary_details+="🟢 **$platform 激活成功（重试成功）**：\`$masked_user@$ip\`"$'\n'
@@ -105,5 +103,19 @@ for account in $accounts; do
     fi
 done
 
-# 汇总消息（一次推送）
-final_msg_
+# === 修复后的 final_msg（无错误） ===
+final_msg=$'📊 **SERV00 / CT8 激活结果汇总**\n'
+final_msg+=$'------------------------------\n\n'
+
+final_msg+="$summary_details"$'\n'
+
+final_msg+="*成功：* $success_count"$'\n'
+final_msg+="*失败：* $fail_count"$'\n\n'
+
+final_msg+=$'*成功列表：*\n'"${success_list:-无}"$'\n'
+final_msg+=$'*失败列表：*\n'"${fail_list:-无}"$'\n'
+
+# 推送到 Telegram
+send_tg "$final_msg"
+
+echo -e "$final_msg"
