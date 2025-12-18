@@ -3,9 +3,9 @@
 purple() { echo -e "\033[35m$1\033[0m"; }
 
 echo ""
-purple "=== SERV00 | CT8 By:Djkyc 一键保活（最终加强版 + 自动识别平台 + 合并TG消息）===\n"
+purple "=== SERV00 | CT8 By:Djkyc 一键保活（最终版｜自动识别平台｜TG 简洁模板）===\n"
 
-# 账号脱敏函数
+# ========= 账号脱敏 =========
 mask_username() {
     local name="$1"
     local len=${#name}
@@ -19,7 +19,7 @@ mask_username() {
     fi
 }
 
-# 自动识别平台（大写）
+# ========= 平台识别 =========
 detect_platform() {
     local host="$1"
 
@@ -32,7 +32,16 @@ detect_platform() {
     fi
 }
 
-# Telegram 推送函数
+# ========= 时间 =========
+get_utc_time() {
+    date -u "+%Y-%m-%d %H:%M:%S"
+}
+
+get_bj_time() {
+    TZ=Asia/Shanghai date "+%Y-%m-%d %H:%M:%S"
+}
+
+# ========= Telegram 推送 =========
 send_tg() {
     local message="$1"
     [[ -z "$TG_TOKEN" || -z "$CHAT_ID" ]] && return
@@ -43,20 +52,19 @@ send_tg() {
         --data-urlencode "text=$message" >/dev/null
 }
 
-# 参数
+# ========= 参数 =========
 accounts_file="$1"
 TG_TOKEN="$2"
 CHAT_ID="$3"
 
 accounts=$(jq -c '.[]' "$accounts_file")
 
-success_list=""
-fail_list=""
-summary_details=""
+success_lines=""
+fail_lines=""
 success_count=0
 fail_count=0
 
-# SSH 登录（带重试）
+# ========= SSH 登录（带一次重试） =========
 try_login() {
     local ip="$1"
     local username="$2"
@@ -73,7 +81,7 @@ try_login() {
         -tt "$username@$ip" "echo ok; sleep 1; exit" >/dev/null 2>&1
 }
 
-# 遍历账户
+# ========= 遍历账号 =========
 for account in $accounts; do
     ip=$(echo "$account" | jq -r '.ip')
     username=$(echo "$account" | jq -r '.username')
@@ -83,39 +91,42 @@ for account in $accounts; do
     masked_user=$(mask_username "$username")
     platform=$(detect_platform "$ip")
 
-    echo "激活中：***$platform*** $masked_user@$ip"
+    echo "激活中：$platform $masked_user@$ip"
 
     if try_login "$ip" "$username" "$password" "$port"; then
-        success_list+="🟢 [**$platform**] $masked_user@$ip"$'\n'
-        summary_details+="🟢 **$platform 激活成功**：\`$masked_user@$ip\`"$'\n'
+        success_lines+="🟢 $platform 激活成功：$masked_user@$ip"$'\n'
         ((success_count++))
     else
         sleep 2
         if try_login "$ip" "$username" "$password" "$port"; then
-            success_list+="🟢 [**$platform**] $masked_user@$ip"$'\n'
-            summary_details+="🟢 **$platform 激活成功（重试成功）**：\`$masked_user@$ip\`"$'\n'
+            success_lines+="🟢 $platform 激活成功：$masked_user@$ip"$'\n'
             ((success_count++))
         else
-            fail_list+="🔴 [**$platform**] $masked_user@$ip"$'\n'
-            summary_details+="🔴 **$platform 激活失败**：\`$masked_user@$ip\`"$'\n'
+            fail_lines+="🔴 $platform 激活失败：$masked_user@$ip"$'\n'
             ((fail_count++))
         fi
     fi
 done
 
-# === 修复后的 final_msg（无错误） ===
+# ========= 生成 TG 消息 =========
+utc_time=$(get_utc_time)
+bj_time=$(get_bj_time)
+
 final_msg=$'📊 **SERV00 / CT8 激活结果汇总**\n'
-final_msg+=$'------------------------------\n\n'
+final_msg+=$'🕒 **更新时间：**\n'
+final_msg+="• UTC： $utc_time"$'\n'
+final_msg+="• 北京时间： $bj_time"$'\n\n'
 
-final_msg+="$summary_details"$'\n'
+# 成功播报
+if [[ -n "$success_lines" ]]; then
+    final_msg+="$success_lines"$'\n'
+fi
 
-final_msg+="*成功：* $success_count"$'\n'
-final_msg+="*失败：* $fail_count"$'\n\n'
+# 失败列表
+final_msg+=$'❌ **失败列表：**\n'
+final_msg+="${fail_lines:-无}"
 
-final_msg+=$'*成功列表：*\n'"${success_list:-无}"$'\n'
-final_msg+=$'*失败列表：*\n'"${fail_list:-无}"$'\n'
-
-# 推送到 Telegram
+# ========= 推送 =========
 send_tg "$final_msg"
 
 echo -e "$final_msg"
